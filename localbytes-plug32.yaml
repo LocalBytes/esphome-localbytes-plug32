@@ -1,0 +1,283 @@
+substitutions:
+  name: "localbytes-plug32"
+  friendly_name: "LocalBytes Plug32"
+  main_icon: "power-socket-uk"
+
+  # Options: `RESTORE_DEFAULT_OFF`, `RESTORE_DEFAULT_ON`, `ALWAYS_ON` & `ALWAYS_OFF`
+  default_state: "RESTORE_DEFAULT_OFF"
+
+  throttle_average: 5s
+
+esphome:
+  name: "${name}"
+  friendly_name: "${friendly_name}"
+  min_version: 2026.4.1
+  name_add_mac_suffix: true
+  project:
+    name: localbytes.plug32
+    version: "0.1.0"
+
+esp32:
+  variant: esp32c3
+  flash_frequency: 40MHz
+  framework:
+    type: esp-idf
+
+external_components:
+  - source: components
+
+factory_reset:
+
+web_server:
+  version: 3
+  include_internal: true
+  sorting_groups:
+    - id: group_power
+      name: "Power"
+      sorting_weight: 10
+    - id: group_energy
+      name: "Energy"
+      sorting_weight: 20
+    - id: group_diagnostics
+      name: "Diagnostics"
+      sorting_weight: 30
+
+logger:
+
+ota:
+  - platform: esphome
+    allow_partition_access: true
+
+api:
+
+esp32_improv:
+  authorizer: button_sensor
+  status_indicator: wifi_led
+
+dashboard_import:
+  package_import_url: github://LocalBytes/esphome-localbytes-plug32/localbytes-plug32.yaml@main
+
+wifi:
+  ap:
+    ssid: "${friendly_name}"
+  on_connect:
+    output.turn_on: wifi_led
+  on_disconnect:
+    output.turn_off: wifi_led
+
+network:
+  enable_ipv6: true
+
+captive_portal:
+
+time:
+  - platform: homeassistant
+  - platform: sntp
+
+esp32_ble_tracker:
+
+bluetooth_proxy:
+  active: true
+
+uart:
+  rx_pin: GPIO20
+  tx_pin: GPIO21
+  baud_rate: 4800
+  parity: EVEN
+
+number:
+  - platform: template
+    name: "Calibrate Voltage"
+    id: voltage_multiplier_number
+    icon: "mdi:tune"
+    entity_category: config
+    internal: true
+    web_server:
+      sorting_group_id: group_diagnostics
+    min_value: 0.1
+    max_value: 5.0
+    step: 0.001
+    mode: box
+    optimistic: true
+    restore_value: true
+    initial_value: 0.44
+    on_value:
+      - lambda: id(power_sensor).set_voltage_multiplier(x);
+  - platform: template
+    name: "Calibrate Current"
+    id: current_multiplier_number
+    icon: "mdi:tune"
+    entity_category: config
+    internal: true
+    web_server:
+      sorting_group_id: group_diagnostics
+    min_value: 0.1
+    max_value: 5.0
+    step: 0.001
+    mode: box
+    optimistic: true
+    restore_value: true
+    initial_value: 0.94
+    on_value:
+      - lambda: id(power_sensor).set_current_multiplier(x);
+  - platform: template
+    name: "Calibrate Power"
+    id: power_multiplier_number
+    icon: "mdi:tune"
+    entity_category: config
+    internal: true
+    web_server:
+      sorting_group_id: group_diagnostics
+    min_value: 0.1
+    max_value: 5.0
+    step: 0.001
+    mode: box
+    optimistic: true
+    restore_value: true
+    initial_value: 0.96
+    on_value:
+      - lambda: id(power_sensor).set_power_multiplier(x);
+
+output:
+  - platform: gpio
+    id: relay_led
+    pin:
+      number: GPIO18
+      inverted: true
+
+  - platform: gpio
+    id: wifi_led
+    pin:
+      number: GPIO10
+      inverted: true
+
+binary_sensor:
+  - platform: gpio
+    id: button_sensor
+    pin:
+      number: GPIO19
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Button"
+    web_server:
+      sorting_group_id: group_power
+    on_click:
+      then:
+        switch.toggle: relay
+
+  - platform: status
+    name: "Server Status"
+    web_server:
+      sorting_group_id: group_diagnostics
+
+switch:
+  - platform: gpio
+    name: ""
+    icon: "mdi:${main_icon}"
+    pin: GPIO6
+    id: relay
+    restore_mode: "${default_state}"
+    web_server:
+      sorting_group_id: group_power
+    on_turn_on:
+      output.turn_on: relay_led
+    on_turn_off:
+      output.turn_off: relay_led
+
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Status"
+    update_interval: 60s
+    web_server:
+      sorting_group_id: group_diagnostics
+
+  - platform: cse7766
+    id: power_sensor
+    voltage:
+      name: "Voltage"
+      id: voltage
+      web_server:
+        sorting_group_id: group_energy
+      filters:
+        - throttle_average: ${throttle_average}
+    current:
+      name: "Current"
+      id: current
+      web_server:
+        sorting_group_id: group_energy
+      filters:
+        - throttle_average: ${throttle_average}
+    power:
+      name: "Power"
+      id: power
+      web_server:
+        sorting_group_id: group_energy
+      filters:
+        - throttle_average: ${throttle_average}
+    energy:
+      name: "Energy"
+      web_server:
+        sorting_group_id: group_energy
+      filters:
+        - throttle: 5s
+    apparent_power:
+      name: "Power (Apparent)"
+      web_server:
+        sorting_group_id: group_energy
+      filters:
+        - throttle_average: ${throttle_average}
+    reactive_power:
+      name: "Power (Reactive)"
+      web_server:
+        sorting_group_id: group_energy
+      filters:
+        - throttle_average: ${throttle_average}
+    power_factor:
+      name: "Power Factor"
+      web_server:
+        sorting_group_id: group_energy
+      filters:
+        - throttle_average: ${throttle_average}
+
+  - platform: total_daily_energy
+    name: "Energy (Daily)"
+    device_class: energy
+    power_id: power
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: kWh
+    web_server:
+      sorting_group_id: group_energy
+
+  - platform: ntc
+    sensor: resistance_sensor
+    name: "Temperature"
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: group_diagnostics
+    calibration:
+      b_constant: 3950
+      reference_resistance: 100k
+      reference_temperature: 25°C
+
+  - platform: resistance
+    id: resistance_sensor
+    sensor: adc_sensor
+    configuration: DOWNSTREAM
+    resistor: 15.8k
+
+  - platform: adc
+    id: adc_sensor
+    pin: GPIO4
+    update_interval: 30s
+    attenuation: 12db
+
+button:
+  - platform: restart
+    name: "Restart"
+    web_server:
+      sorting_group_id: group_diagnostics
+  - platform: factory_reset
+    name: "Restart with Factory Default Settings"
+    web_server:
+      sorting_group_id: group_diagnostics
