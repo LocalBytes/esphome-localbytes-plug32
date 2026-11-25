@@ -8,6 +8,14 @@ substitutions:
 
   throttle_average: 5s
 
+  # Power monitoring scale. These are the board's design values, so no per-plug calibration is needed.
+  # voltage_divider: two 1 MOhm resistors over the HLW8032's internal 1 kOhm, giving 2.0.
+  # current_resistor: the 1 mOhm shunt (marked R001), in milliohms.
+  # Both are also adjustable at runtime from the "Voltage Divider" and "Current Resistor" numbers.
+  # These are only the defaults used until a number is changed.
+  voltage_divider: "2.0"
+  current_resistor: "1.0"
+
 esphome:
   name: "${name}"
   friendly_name: "${friendly_name}"
@@ -22,9 +30,6 @@ esp32:
   flash_frequency: 40MHz
   framework:
     type: esp-idf
-
-external_components:
-  - source: components
 
 factory_reset:
 
@@ -87,56 +92,39 @@ uart:
 
 number:
   - platform: template
-    name: "Calibrate Voltage"
-    id: voltage_multiplier_number
+    name: "Voltage Divider"
+    id: voltage_divider_number
     icon: "mdi:tune"
     entity_category: config
-    internal: true
     web_server:
       sorting_group_id: group_diagnostics
-    min_value: 0.1
-    max_value: 5.0
+    min_value: 1.0
+    max_value: 4.0
     step: 0.001
     mode: box
     optimistic: true
     restore_value: true
-    initial_value: 0.44
+    initial_value: ${voltage_divider}
     on_value:
-      - lambda: id(power_sensor).set_voltage_multiplier(x);
+      - lambda: id(power_monitor).set_voltage_divider(x);
+
   - platform: template
-    name: "Calibrate Current"
-    id: current_multiplier_number
+    name: "Current Resistor"
+    id: current_resistor_number
     icon: "mdi:tune"
     entity_category: config
-    internal: true
+    unit_of_measurement: "mΩ"
     web_server:
       sorting_group_id: group_diagnostics
-    min_value: 0.1
-    max_value: 5.0
+    min_value: 0.5
+    max_value: 2.0
     step: 0.001
     mode: box
     optimistic: true
     restore_value: true
-    initial_value: 0.94
+    initial_value: ${current_resistor}
     on_value:
-      - lambda: id(power_sensor).set_current_multiplier(x);
-  - platform: template
-    name: "Calibrate Power"
-    id: power_multiplier_number
-    icon: "mdi:tune"
-    entity_category: config
-    internal: true
-    web_server:
-      sorting_group_id: group_diagnostics
-    min_value: 0.1
-    max_value: 5.0
-    step: 0.001
-    mode: box
-    optimistic: true
-    restore_value: true
-    initial_value: 0.96
-    on_value:
-      - lambda: id(power_sensor).set_power_multiplier(x);
+      - lambda: id(power_monitor).set_current_resistor(x / 1000.0f);
 
 output:
   - platform: gpio
@@ -191,8 +179,10 @@ sensor:
     web_server:
       sorting_group_id: group_diagnostics
 
-  - platform: cse7766
-    id: power_sensor
+  - platform: hlw8032
+    id: power_monitor
+    voltage_divider: ${voltage_divider}
+    current_resistor: ${current_resistor}mohm
     voltage:
       name: "Voltage"
       id: voltage
@@ -214,20 +204,8 @@ sensor:
         sorting_group_id: group_energy
       filters:
         - throttle_average: ${throttle_average}
-    energy:
-      name: "Energy"
-      web_server:
-        sorting_group_id: group_energy
-      filters:
-        - throttle: 5s
     apparent_power:
       name: "Power (Apparent)"
-      web_server:
-        sorting_group_id: group_energy
-      filters:
-        - throttle_average: ${throttle_average}
-    reactive_power:
-      name: "Power (Reactive)"
       web_server:
         sorting_group_id: group_energy
       filters:
@@ -238,6 +216,20 @@ sensor:
         sorting_group_id: group_energy
       filters:
         - throttle_average: ${throttle_average}
+
+  # The HLW8032 has no energy counter, so energy is integrated from power on the plug.
+  - platform: integration
+    name: "Energy"
+    sensor: power
+    time_unit: h
+    integration_method: trapezoid
+    restore: true
+    unit_of_measurement: Wh
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 1
+    web_server:
+      sorting_group_id: group_energy
 
   - platform: total_daily_energy
     name: "Energy (Daily)"
