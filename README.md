@@ -27,7 +27,7 @@ wifi:
 
 # Installation
 
-Connect to the hotspot the plug creates (`LocalBytes Plug32`) and enter your Wi-Fi details, or set up Wi-Fi over Bluetooth from Home Assistant. Once it's on your network, use the "dashboard import" feature of ESPHome to take ownership of the plug.
+Connect to the hotspot the plug creates (`localbytes-plug32-` followed by the last six characters of its MAC address) and enter your Wi-Fi details, or set up Wi-Fi over Bluetooth from Home Assistant. Once it's on your network, use the "dashboard import" feature of ESPHome to take ownership of the plug.
 
 # Calibration
 
@@ -42,3 +42,5 @@ This project is currently published with no specific licence:
 
 Unless otherwise stated, all code is &copy; Allport-IT LTD. All rights reserved.  
 "LocalBytes" and the LocalBytes Logo are &reg; of Allport-IT LTD.
+
+The `hlw8032` component in `components/` is ESPHome's own, with our changes in `components/hlw8032.patch`. It keeps ESPHome's licence, which is in `components/hlw8032.licence`.

@@ -1,0 +1,97 @@
+Local change to ESPHome 2026.11.1's stock hlw8032 component (esphome/components/hlw8032).
+- Adds power_factor_tolerance (default 5%): a calculated power factor between 1 and 1 + tolerance is
+  reported as 1, not discarded as impossible.
+- Adds min_current (default 50 mA): current is only reported when power / voltage exceeds it, as the
+  cse7766 component does, so the noise floor isn't published as a current with no load.
+Apply with: git apply hlw8032.patch
+
+diff --git a/esphome/components/hlw8032/hlw8032.cpp b/esphome/components/hlw8032/hlw8032.cpp
+index eec9bc4..c5fd706 100644
+--- a/esphome/components/hlw8032/hlw8032.cpp
++++ b/esphome/components/hlw8032/hlw8032.cpp
+@@ -143,7 +143,7 @@ void HLW8032Component::parse_data_() {
+   PUBLISH_STATE(this->power_sensor_, power);
+ 
+   float current = 0.0f;
+-  if (have_current && current_reg) {
++  if (have_current && current_reg && voltage > 1.0f && power / voltage > this->min_current_) {
+     current = float(current_parameter) * current_multiplier / float(current_reg);
+   }
+   PUBLISH_STATE(this->current_sensor_, current);
+@@ -154,6 +154,9 @@ void HLW8032Component::parse_data_() {
+     if (have_power || power_cycle_exceeds_range) {
+       if (apparent_power > 0) {
+         pf = power / apparent_power;
++        if (pf > 1 && pf <= 1 + this->power_factor_tolerance_) {
++          pf = 1.0f;
++        }
+         if (pf < 0 || pf > 1) {
+           ESP_LOGD(TAG, "Impossible power factor: %.4f not in interval [0, 1]", pf);
+           pf = NAN;
+@@ -172,8 +175,11 @@ void HLW8032Component::dump_config() {
+   ESP_LOGCONFIG(TAG,
+                 "Configuration:\n"
+                 "  Current resistor: %.1f mΩ\n"
+-                "  Voltage Divider: %.3f",
+-                this->current_resistor_ * 1000.0f, this->voltage_divider_);
++                "  Voltage Divider: %.3f\n"
++                "  Power Factor Tolerance: %.1f%%\n"
++                "  Min Current: %.3f A",
++                this->current_resistor_ * 1000.0f, this->voltage_divider_, this->power_factor_tolerance_ * 100.0f,
++                this->min_current_);
+   LOG_SENSOR("  ", "Voltage", this->voltage_sensor_);
+   LOG_SENSOR("  ", "Current", this->current_sensor_);
+   LOG_SENSOR("  ", "Power", this->power_sensor_);
+diff --git a/esphome/components/hlw8032/hlw8032.h b/esphome/components/hlw8032/hlw8032.h
+index 0140780..bc7d87d 100644
+--- a/esphome/components/hlw8032/hlw8032.h
++++ b/esphome/components/hlw8032/hlw8032.h
+@@ -19,6 +19,10 @@ class HLW8032Component final : public Component, public uart::UARTDevice {
+ 
+   void set_current_resistor(float current_resistor) { this->current_resistor_ = current_resistor; }
+   void set_voltage_divider(float voltage_divider) { this->voltage_divider_ = voltage_divider; }
++  void set_power_factor_tolerance(float power_factor_tolerance) {
++    this->power_factor_tolerance_ = power_factor_tolerance;
++  }
++  void set_min_current(float min_current) { this->min_current_ = min_current; }
+ 
+  protected:
+   void parse_data_();
+@@ -26,6 +30,8 @@ class HLW8032Component final : public Component, public uart::UARTDevice {
+ 
+   float current_resistor_{0.001f};
+   float voltage_divider_{1.720f};
++  float power_factor_tolerance_{0.05f};
++  float min_current_{0.05f};
+   uint8_t raw_data_[24]{};
+   uint8_t check_{0};
+   uint8_t raw_data_index_{0};
+diff --git a/esphome/components/hlw8032/sensor.py b/esphome/components/hlw8032/sensor.py
+index 09cfe73..0b069ad 100644
+--- a/esphome/components/hlw8032/sensor.py
++++ b/esphome/components/hlw8032/sensor.py
+@@ -22,6 +22,9 @@ from esphome.const import (
+ )
+ from esphome.types import ConfigType
+ 
++CONF_MIN_CURRENT = "min_current"
++CONF_POWER_FACTOR_TOLERANCE = "power_factor_tolerance"
++
+ DEPENDENCIES = ["uart"]
+ 
+ hlw8032_ns = cg.esphome_ns.namespace("hlw8032")
+@@ -62,6 +65,8 @@ CONFIG_SCHEMA = (
+             ),
+             cv.Optional(CONF_CURRENT_RESISTOR, default=0.001): cv.resistance,
+             cv.Optional(CONF_VOLTAGE_DIVIDER, default=1.720): cv.positive_float,
++            cv.Optional(CONF_POWER_FACTOR_TOLERANCE, default=0.05): cv.percentage,
++            cv.Optional(CONF_MIN_CURRENT, default=0.05): cv.current,
+         }
+     )
+     .extend(uart.UART_DEVICE_SCHEMA)
+@@ -84,3 +89,5 @@ async def to_code(config: ConfigType) -> None:
+     await sensors(CONF_POWER_FACTOR, var.set_power_factor_sensor)
+     cg.add(var.set_current_resistor(config[CONF_CURRENT_RESISTOR]))
+     cg.add(var.set_voltage_divider(config[CONF_VOLTAGE_DIVIDER]))
++    cg.add(var.set_power_factor_tolerance(config[CONF_POWER_FACTOR_TOLERANCE]))
++    cg.add(var.set_min_current(config[CONF_MIN_CURRENT]))

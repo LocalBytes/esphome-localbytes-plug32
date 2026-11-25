@@ -8,22 +8,14 @@ substitutions:
 
   throttle_average: 5s
 
-  # Power monitoring scale. These are the board's design values, so no per-plug calibration is needed.
-  # voltage_divider: two 1 MOhm resistors over the HLW8032's internal 1 kOhm, giving 2.0.
-  # current_resistor: the 1 mOhm shunt (marked R001), in milliohms.
-  # Both are also adjustable at runtime from the "Voltage Divider" and "Current Resistor" numbers.
-  # These are only the defaults used until a number is changed.
-  voltage_divider: "2.0"
-  current_resistor: "1.0"
-
 esphome:
   name: "${name}"
   friendly_name: "${friendly_name}"
-  min_version: 2026.4.1
+  min_version: 2026.11.1
   name_add_mac_suffix: true
   project:
     name: localbytes.plug32
-    version: "0.1.0"
+    version: "0.1.1"
 
 esp32:
   variant: esp32c3
@@ -31,11 +23,17 @@ esp32:
   framework:
     type: esp-idf
 
+# hlw8032 with a power factor tolerance; see components/hlw8032.patch.
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [hlw8032]
+
 factory_reset:
 
 web_server:
   version: 3
-  include_internal: true
   sorting_groups:
     - id: group_power
       name: "Power"
@@ -54,8 +52,20 @@ ota:
     allow_partition_access: true
 
 api:
+  on_client_connected:
+    - esp32_ble_tracker.start_scan:
+        continuous: true
+  on_client_disconnected:
+    # Scanning on the C3's single core can upset WiFi, so only scan while Home Assistant is connected.
+    - if:
+        condition:
+          not:
+            api.connected:
+              state_subscription_only: true
+        then:
+          - esp32_ble_tracker.stop_scan:
 
-esp32_improv:
+improv_ble:
   authorizer: button_sensor
   status_indicator: wifi_led
 
@@ -63,8 +73,7 @@ dashboard_import:
   package_import_url: github://LocalBytes/esphome-localbytes-plug32/localbytes-plug32.yaml@main
 
 wifi:
-  ap:
-    ssid: "${friendly_name}"
+  ap: {}
   on_connect:
     output.turn_on: wifi_led
   on_disconnect:
@@ -80,6 +89,8 @@ time:
   - platform: sntp
 
 esp32_ble_tracker:
+  scan_parameters:
+    continuous: false
 
 bluetooth_proxy:
   active: true
@@ -104,7 +115,7 @@ number:
     mode: box
     optimistic: true
     restore_value: true
-    initial_value: ${voltage_divider}
+    initial_value: 2.0
     on_value:
       - lambda: id(power_monitor).set_voltage_divider(x);
 
@@ -122,7 +133,7 @@ number:
     mode: box
     optimistic: true
     restore_value: true
-    initial_value: ${current_resistor}
+    initial_value: 1.0
     on_value:
       - lambda: id(power_monitor).set_current_resistor(x / 1000.0f);
 
@@ -181,8 +192,8 @@ sensor:
 
   - platform: hlw8032
     id: power_monitor
-    voltage_divider: ${voltage_divider}
-    current_resistor: ${current_resistor}mohm
+    voltage_divider: 2.0
+    current_resistor: 1mohm
     voltage:
       name: "Voltage"
       id: voltage
